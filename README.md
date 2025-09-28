@@ -1,130 +1,151 @@
-# 🚀 Notification Firebase Demo (Web + Node.js)
+FCM Foreground + Background Split Demo
+Demo ứng dụng web sử dụng Firebase Cloud Messaging (FCM) để gửi thông báo tự động mỗi 30 giây, với sự phân biệt rõ ràng giữa xử lý thông báo ở foreground và background.
 
-Dự án demo gửi **Firebase Cloud Messaging (FCM)** tự động mỗi **30 giây** qua cron job.  
-Hỗ trợ cả **foreground notification** (toast trong web) và **background notification** (OS notification do Service Worker hiển thị).
+🚀 Tính năng chính
+Gửi thông báo tự động: Cron job chạy mỗi 30 giây
 
----
+Phân biệt Foreground/Background:
 
-## 📂 Cấu trúc thư mục
+Foreground: Hiển thị toast notification trong trang
 
-.
-├── index.html # Giao diện web client, Start/Stop + form nhập nội dung thông báo
-├── firebase-messaging-sw.js # Service Worker, nhận thông báo khi web tắt (background)
-├── server.js # Server Node.js (Express + Firebase Admin + cron 30s)
-├── package.json # Thông tin project & dependencies
-├── package-lock.json # Lock file cho npm
-├── .state.json # Lưu trạng thái (enable/disable, token, message, lastSentAt)
-├── .gitignore # Bỏ qua service-account.json, node_modules, log...
-└── service-account.json # 🔐 Admin SDK key (LOCAL ONLY, KHÔNG commit)
+Background: Hiển thị native browser notification
 
-less
-Sao chép mã
+Quản lý đa thiết bị: Hỗ trợ nhiều token FCM cùng lúc
 
----
+Tùy chỉnh nội dung: Cập nhật tiêu đề và nội dung thông báo trực tiếp
 
-## 🔄 Sơ đồ luồng xử lý (Mermaid)
+Trạng thái persistent: Lưu trạng thái vào file JSON
 
-```mermaid
-flowchart LR
-    subgraph Client[Client (Browser)]
-      A[Người dùng mở web] --> B[Get Token -> FCM Token]
-      B --> C[Start -> gửi token lên /enable]
-      C --> D[Update message -> /setMessage]
-      E[Web mở] --> F[onMessage (foreground) -> Toast UI]
-    end
-
-    subgraph Server[Server (Node.js)]
-      G[Express API: /enable,/disable,/status,/setMessage]
-      H[Cron job mỗi 30s]
-      I[.state.json lưu token, message, enabled]
-    end
-
-    subgraph FCM[Firebase Cloud Messaging]
-      J[Đẩy notification]
-    end
-
-    C -->|token| G
-    D -->|title, body| G
-    G -->|lưu| I
-    H -->|gửi data-only| J
-    J -->|push| Client
-    Client -. nếu web đóng .-> K[Service Worker onBackgroundMessage -> OS Notification]
-⚙️ Cách cài đặt & chạy
-1) Clone & cài dependencies
+🛠 Cài đặt
+1. Clone và cài dependencies
 bash
-Sao chép mã
-git clone https://github.com/<your-username>/NotificationFireBase-Demo-web.git
-cd NotificationFireBase-Demo-web
+git clone <repository-url>
+cd fcm-every-minute-demo
 npm install
-2) Thêm service-account.json (KHÔNG commit)
-Firebase Console → Project settings → Service accounts → Generate new private key
+2. Cấu hình Firebase
+Bước 1: Tải service account key
 
-Tải file .json, đặt vào thư mục gốc của dự án
+Vào Firebase Console → Project Settings → Service Accounts
 
-Đã có .gitignore bỏ qua file này
+Generate new private key
 
-3) Chạy server
+Đổi tên file thành service-account.json và đặt trong thư mục gốc
+
+Bước 2: Cấu hình Web App
+
+Firebase Console → Project Settings → General
+
+Thêm web app và copy config
+
+Cập nhật config trong index.html và firebase-messaging-sw.js
+
+3. Khởi chạy
 bash
-Sao chép mã
 npm start
-Mở trình duyệt: http://localhost:3000
+Truy cập: http://localhost:3000
 
-4) Sử dụng
-Get Token: cấp quyền Notification và lấy FCM token
+📁 Cấu trúc project
+text
+fcm-every-minute-demo/
+├── index.html              # Frontend chính
+├── firebase-messaging-sw.js # Service Worker xử lý background
+├── server.js               # Backend Express + cron
+├── service-account.json    # Firebase Admin SDK key
+├── .state.json             # Trạng thái persistent
+├── package.json
+└── README.md
+🔧 Cách sử dụng
+1. Lấy FCM Token
+Mở http://localhost:3000
 
-Nhập tiêu đề & nội dung → bấm Update message
+Nhấn "Get Token" và cho phép thông báo
 
-Start: bật cron gửi mỗi 30s (có thể đổi trong server.js)
+Token sẽ hiển thị trong khung log
 
-Stop: tắt cron
+2. Bật/tắt thông báo
+Nhấn "Start" để bắt đầu nhận thông báo mỗi 30s
 
-Khi web đang mở → thông báo foreground hiển thị dạng toast trong trang.
-Khi web đóng/ẩn → Service Worker hiển thị OS Notification (nếu trình duyệt còn chạy nền).
+Nhấn "Stop" để dừng
 
-🔧 API server (Express)
-POST /enable { token } → thêm token & bật gửi định kỳ
+3. Tùy chỉnh nội dung
+Nhập tiêu đề và nội dung vào ô input
 
-POST /disable → tắt gửi định kỳ
+Nhấn "Update message" để áp dụng
 
-POST /status → xem trạng thái: enabled, số token, lastSentAt, message hiện tại
+🔄 Luồng hoạt động
+Foreground (Khi tab đang mở)
+FCM message được nhận qua onMessage
 
-POST /setMessage { title, body } → cập nhật nội dung thông báo
+Hiển thị toast notification trong trang
 
-🕒 Đổi chu kỳ gửi (30s → giá trị khác)
-Trong server.js, tìm dòng cron:
+Không hiển thị native notification
 
-js
-Sao chép mã
-cron.schedule("*/30 * * * * *", async () => {
-  // gửi mỗi 30 giây
-});
-Ví dụ gửi mỗi 10 giây: "*/10 * * * * *"
+Background (Khi tab đóng/không active)
+Service Worker nhận message qua onBackgroundMessage
 
-Mỗi 1 phút: "* * * * *"
+Hiển thị native browser notification
 
-Lưu ý: Trường “giây” là phần đầu tiên trong biểu thức cron của node-cron.
+Click notification sẽ mở/focus tab
 
-🔐 Bảo mật
-KHÔNG commit service-account.json lên GitHub
+Cron Job
+Chạy mỗi 30 giây khi enabled
 
-Nếu đã lỡ commit: Revoke/Rotate key trên Firebase Console và làm sạch lịch sử git (BFG hoặc git filter-repo), sau đó force-push
+Gửi data-only message đến tất cả registered tokens
 
-service-account.json chỉ để local hoặc server (qua biến môi trường)
+Lưu log và cập nhật trạng thái
 
-❗ Lỗi thường gặp & cách xử lý nhanh
-invalid_grant (Invalid JWT Signature) khi gửi FCM
-Đồng bộ thời gian hệ thống (Windows: Settings → Time & Language → Sync now)
+⚙️ API Endpoints
+POST /enable - Bật thông báo và thêm token
 
-Dùng đúng service-account.json (không bị hỏng newline/format) và đúng project
+POST /disable - Tắt thông báo
 
-Key có thể đã bị revoke → tạo key mới
+POST /status - Lấy trạng thái hiện tại
 
-Không thấy thông báo khi đóng web
-Bật Run in background cho trình duyệt (Chrome: chrome://settings/system)
+POST /setMessage - Cập nhật nội dung thông báo
 
-Tắt Do Not Disturb/Focus Assist của hệ điều hành
+🔒 Bảo mật
+service-account.json được gitignore
 
-Đảm bảo server Node đang chạy
+CORS enabled cho development
 
-📜 License
-MIT – sử dụng cho mục đích học tập & demo.
+Validate input trên server
+
+🐛 Xử lý lỗi thường gặp
+Token không hoạt động
+Kiểm tra Firebase project configuration
+
+Đảm bảo service worker được register đúng
+
+Kiểm tra console log trong browser
+
+Thông báo không hiển thị
+Kiểm tra browser notification permissions
+
+Verify service worker installation
+
+Kiểm tra FCM message format
+
+Cron không chạy
+Kiểm tra server log
+
+Verify ENABLED state trong .state.json
+
+Kiểm tra Firebase Admin SDK configuration
+
+📝 Ghi chú
+Demo sử dụng data-only messages để tránh trùng lặp thông báo
+
+Service worker phải được host cùng origin với web app
+
+HTTPS required cho production deployment
+
+🛠 Tech Stack
+Frontend: Vanilla JS + Firebase JS SDK
+
+Backend: Node.js + Express
+
+Scheduling: node-cron
+
+Push Notifications: Firebase Cloud Messaging
+
+Persistence: JSON file
