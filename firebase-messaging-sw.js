@@ -13,7 +13,6 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
-// Lắng nghe background push
 messaging.onBackgroundMessage((payload) => {
   console.log("Background message:", payload);
   const { title, body } = payload.notification || {};

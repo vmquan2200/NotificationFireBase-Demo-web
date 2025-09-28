@@ -5,104 +5,86 @@
   <title>FCM Simple Demo</title>
   <style>
     body{font-family:system-ui,Arial,sans-serif;max-width:720px;margin:24px auto;padding:0 12px}
-    button{padding:8px 12px;margin-right:8px}
-    input{padding:6px 8px;margin-right:8px}
-    pre{background:#f5f5f7;padding:10px;border-radius:8px;white-space:pre-wrap}
+    button{padding:10px 14px;margin:6px 6px 6px 0;border-radius:10px;border:1px solid #ddd;cursor:pointer}
+    pre{background:#f6f7f9;padding:10px;border-radius:8px;min-height:120px;white-space:pre-wrap}
+    .pill{display:inline-block;padding:4px 10px;border-radius:999px;border:1px solid #ddd;margin-left:8px}
   </style>
 </head>
 <body>
-  <h1>FCM Simple Demo</h1>
+  <h1>FCM 1-Min Toggle (Simple)</h1>
 
   <div>
     <button id="btn-init">Get Token</button>
-    <button id="btn-send">Send again</button>
+    <button id="btn-toggle">Start</button>
+    <span id="status" class="pill">OFF</span>
   </div>
-  <p>
-    <input id="title" placeholder="Title (optional)"/>
-    <input id="body"  placeholder="Body (optional)"/>
-  </p>
 
   <pre id="log"></pre>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js";
-    import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-messaging.js";
+    import { getMessaging, getToken, onMessage, isSupported } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-messaging.js";
 
-    // 🔴 THAY BẰNG THÔNG TIN DỰ ÁN CỦA BẠN
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
-const firebaseConfig = {
-  apiKey: "AIzaSyC_wYfigjo52Yi6K3oWk7_BmKz9JynTUR0",
-  authDomain: "notification-537d7.firebaseapp.com",
-  projectId: "notification-537d7",
-  storageBucket: "notification-537d7.firebasestorage.app",
-  messagingSenderId: "779369159825",
-  appId: "1:779369159825:web:1f05b553ab071c20797330",
-  measurementId: "G-PVM55NDDBX"
-};
-    const VAPID_PUBLIC_KEY = "BLR_9U-OOESq-163QscjfEU6vbUuvCMa9HGvrHT7YZynlLnyYHn8GseBU5Sxu0NqLb0W_rwSoB8eilx3Zw8-Zx0";
-    // 🔴 Hết phần cần thay
+    // ⚠️ Firebase config của bạn (đang dùng demo; thay bằng config dự án của bạn nếu cần)
+    const firebaseConfig = {
+      apiKey: "AIzaSyC_wYfigjo52Yi6K3oWk7_BmKz9JynTUR0",
+      authDomain: "notification-537d7.firebaseapp.com",
+      projectId: "notification-537d7",
+      storageBucket: "notification-537d7.firebasestorage.app",
+      messagingSenderId: "779369159825",
+      appId: "1:779369159825:web:1f05b553ab071c20797330",
+      measurementId: "G-PVM55NDDBX"
+    };
+    const VAPID_PUBLIC_KEY = "BMQWLtQTJfnp00nGFflMg6Cqg2onQIoqfiBQUy8xMKNcT6Qqhtd9HekfPwvLCU-LpIJFN236ma8ZI_QWLYVoGpQ";
 
     const app = initializeApp(firebaseConfig);
-    const messaging = getMessaging(app);
-
     const logEl = document.getElementById("log");
-    const log = (m) => { logEl.textContent += m + "\n"; };
-    const titleEl = document.getElementById("title");
-    const bodyEl  = document.getElementById("body");
+    const statusEl = document.getElementById("status");
+    const toggleBtn = document.getElementById("btn-toggle");
+    let TOKEN = "";
 
-    let REG_TOKEN = ""; // lưu token để bắn lại
+    const log = (m) => { logEl.textContent += m + "\n"; logEl.scrollTop = logEl.scrollHeight; };
 
-    async function requestToken() {
-      try {
-        const perm = await Notification.requestPermission();
-        log("Permission: " + perm);
-        if (perm !== "granted") {
-          alert("Hãy Allow notifications rồi bấm lại Get Token");
-          return;
-        }
-        // ĐĂNG KÝ SERVICE WORKER trước khi getToken
-        const reg = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
-        const token = await getToken(messaging, {
-          vapidKey: VAPID_PUBLIC_KEY,
-          serviceWorkerRegistration: reg
-        });
-        if (!token) {
-          log("⚠️ getToken trả về null. Kiểm tra lại VAPID key & cấu hình Cloud Messaging.");
-          return;
-        }
-        REG_TOKEN = token;
-        log("Token: " + token);
-      } catch (err) {
-        console.error(err);
-        log("❌ " + (err?.message || err));
-      }
+    async function api(path, body) {
+      const res = await fetch(path, { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(body || {}) });
+      const text = await res.text();
+      try { return JSON.parse(text); } catch { return { raw: text }; }
     }
 
-    async function sendNotification() {
-      if (!REG_TOKEN) { alert("Nhấn 'Get Token' trước!"); return; }
-      const payload = {
-        token: REG_TOKEN,
-        title: titleEl.value || "Hi 👋",
-        body:  bodyEl.value  || "Simple FCM works!"
-      };
-      const res = await fetch("/send", {
-        method: "POST",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify(payload)
+    async function refreshStatus() {
+      const r = await api("/status");
+      const on = !!r?.enabled;
+      statusEl.textContent = on ? "ON" : "OFF";
+      toggleBtn.textContent = on ? "Stop" : "Start";
+      log("status: " + JSON.stringify(r));
+    }
+
+    async function getTheToken() {
+      if (!(await isSupported())) { log("❌ FCM not supported."); return; }
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") { alert("Bạn cần Allow notifications."); return; }
+      const reg = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
+      const messaging = getMessaging(app);
+      TOKEN = await getToken(messaging, { vapidKey: VAPID_PUBLIC_KEY, serviceWorkerRegistration: reg });
+      log("Token: " + (TOKEN ? TOKEN : "null"));
+      onMessage(messaging, (payload) => {
+        log("Foreground: " + JSON.stringify(payload));
+        if (payload?.notification?.title) new Notification(payload.notification.title, { body: payload.notification.body });
       });
-      log("Server: " + await res.text());
     }
 
-    // Nhận thông báo khi tab đang mở (foreground)
-    onMessage(messaging, (payload) => {
-      log("Foreground: " + JSON.stringify(payload));
-      if (payload?.notification?.title) {
-        new Notification(payload.notification.title, { body: payload.notification.body });
-      }
-    });
+    async function toggle() {
+      if (!TOKEN) { alert("Nhấn Get Token trước."); return; }
+      const isOn = statusEl.textContent === "ON";
+      const r = await api(isOn ? "/disable" : "/enable", { token: TOKEN });
+      log("toggle: " + JSON.stringify(r));
+      await refreshStatus();
+    }
 
-    document.getElementById("btn-init").onclick = requestToken;
-    document.getElementById("btn-send").onclick = sendNotification;
+    document.getElementById("btn-init").onclick = getTheToken;
+    document.getElementById("btn-toggle").onclick = toggle;
+
+    refreshStatus();
   </script>
 </body>
 </html>
