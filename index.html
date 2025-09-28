@@ -2,16 +2,35 @@
 <html>
 <head>
   <meta charset="utf-8"/>
-  <title>FCM Simple Demo</title>
+  <title>FCM Foreground + Background Split</title>
   <style>
     body{font-family:system-ui,Arial,sans-serif;max-width:720px;margin:24px auto;padding:0 12px}
     button{padding:10px 14px;margin:6px 6px 6px 0;border-radius:10px;border:1px solid #ddd;cursor:pointer}
-    pre{background:#f6f7f9;padding:10px;border-radius:8px;min-height:120px;white-space:pre-wrap}
     .pill{display:inline-block;padding:4px 10px;border-radius:999px;border:1px solid #ddd;margin-left:8px}
+    /* Toast: góc trên bên phải, to và nổi bật */
+    #toast{
+      position:fixed;
+      top:20px;
+      right:20px;
+      max-width:360px;
+      background:#111;
+      color:#fff;
+      font-size:20px;
+      font-weight:bold;
+      padding:20px 24px;
+      border-radius:12px;
+      box-shadow:0 4px 12px rgba(0,0,0,.3);
+      opacity:0;
+      pointer-events:none;
+      transition:opacity .25s, transform .25s;
+      transform:translateY(-20px);
+    }
+    #toast.show{ opacity:1; transform:translateY(0); }
+    pre{background:#f6f7f9;padding:10px;border-radius:8px;min-height:120px;white-space:pre-wrap}
   </style>
 </head>
 <body>
-  <h1>FCM 1-Min Toggle (Simple)</h1>
+  <h1>FCM: Foreground vs Background</h1>
 
   <div>
     <button id="btn-init">Get Token</button>
@@ -19,13 +38,21 @@
     <span id="status" class="pill">OFF</span>
   </div>
 
+  <!-- Khung nhập nội dung thông báo -->
+  <div style="margin-top:16px">
+    <input id="msgTitle" placeholder="Nhập tiêu đề thông báo" style="padding:8px;width:250px"/>
+    <input id="msgBody"  placeholder="Nhập nội dung thông báo" style="padding:8px;width:350px"/>
+    <button id="btn-update">Update message</button>
+  </div>
+
   <pre id="log"></pre>
+  <div id="toast"></div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js";
     import { getMessaging, getToken, onMessage, isSupported } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-messaging.js";
 
-    // ⚠️ Firebase config của bạn (đang dùng demo; thay bằng config dự án của bạn nếu cần)
+    // ⚠️ Thay bằng config dự án của bạn nếu cần
     const firebaseConfig = {
       apiKey: "AIzaSyC_wYfigjo52Yi6K3oWk7_BmKz9JynTUR0",
       authDomain: "notification-537d7.firebaseapp.com",
@@ -41,9 +68,11 @@
     const logEl = document.getElementById("log");
     const statusEl = document.getElementById("status");
     const toggleBtn = document.getElementById("btn-toggle");
+    const toastEl = document.getElementById("toast");
     let TOKEN = "";
 
     const log = (m) => { logEl.textContent += m + "\n"; logEl.scrollTop = logEl.scrollHeight; };
+    const toast = (t) => { toastEl.textContent = t; toastEl.classList.add("show"); setTimeout(()=>toastEl.classList.remove("show"), 2500); };
 
     async function api(path, body) {
       const res = await fetch(path, { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(body || {}) });
@@ -67,9 +96,13 @@
       const messaging = getMessaging(app);
       TOKEN = await getToken(messaging, { vapidKey: VAPID_PUBLIC_KEY, serviceWorkerRegistration: reg });
       log("Token: " + (TOKEN ? TOKEN : "null"));
+
+      // FOREGROUND: hiện trong trang (tránh dùng Notification API để không trùng background)
       onMessage(messaging, (payload) => {
-        log("Foreground: " + JSON.stringify(payload));
-        if (payload?.notification?.title) new Notification(payload.notification.title, { body: payload.notification.body });
+        const title = payload?.data?.title || "Foreground Ping";
+        const body  = payload?.data?.body  || JSON.stringify(payload?.data || {});
+        log("Foreground data: " + body);
+        toast(`${title}: ${body}`);
       });
     }
 
@@ -81,8 +114,16 @@
       await refreshStatus();
     }
 
-    document.getElementById("btn-init").onclick = getTheToken;
+    async function updateMessage() {
+      const title = document.getElementById("msgTitle").value || "⏰ Ping 30s";
+      const body  = document.getElementById("msgBody").value  || "Nội dung mặc định";
+      const r = await api("/setMessage", { title, body });
+      log("updateMessage: " + JSON.stringify(r));
+    }
+
+    document.getElementById("btn-init").onclick   = getTheToken;
     document.getElementById("btn-toggle").onclick = toggle;
+    document.getElementById("btn-update").onclick = updateMessage;
 
     refreshStatus();
   </script>

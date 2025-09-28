@@ -12,24 +12,28 @@ const __dirname = path.dirname(__filename);
 const app = express();
 app.use(cors());
 app.use(express.json());
-app.use(express.static(".")); // serve index.html & sw
+app.use(express.static(".")); // phục vụ index.html & sw
 
-// Khởi tạo Admin SDK từ service-account.json (đặt cùng thư mục với server.js)
+// Khởi tạo Admin SDK
 const serviceAccount = JSON.parse(await fs.readFile(path.join(__dirname, "service-account.json"), "utf8"));
 if (!admin.apps.length) {
   admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 }
 const messaging = admin.messaging();
 
-// Trạng thái bật/tắt và danh sách token được bật
+// Trạng thái
 let ENABLED = false;
-let TOKENS = new Set(); // cho phép nhiều thiết bị nếu cần
+let TOKENS = new Set(); // có thể nhiều thiết bị
 let lastSentAt = null;
+let CURRENT_MESSAGE = {
+  title: "⏰ Ping 30s",
+  body : "Thông báo mặc định"
+};
 
-// Lưu/đọc trạng thái để không mất khi restart
+// Lưu/đọc trạng thái
 const stateFile = path.join(__dirname, ".state.json");
 async function saveState() {
-  const data = { ENABLED, TOKENS: Array.from(TOKENS), lastSentAt };
+  const data = { ENABLED, TOKENS: Array.from(TOKENS), lastSentAt, CURRENT_MESSAGE };
   await fs.writeFile(stateFile, JSON.stringify(data, null, 2));
 }
 async function loadState() {
@@ -38,25 +42,26 @@ async function loadState() {
     ENABLED = !!s.ENABLED;
     TOKENS = new Set(s.TOKENS || []);
     lastSentAt = s.lastSentAt || null;
+    if (s.CURRENT_MESSAGE) CURRENT_MESSAGE = s.CURRENT_MESSAGE;
   } catch {}
 }
 await loadState();
 
-// Cron mỗi phút: gửi tới tất cả token đã enable
-cron.schedule("* * * * *", async () => {
+// Cron mỗi 30s: GỬI DATA-ONLY (không có 'notification')
+cron.schedule("*/30 * * * * *", async () => {
   if (!ENABLED || TOKENS.size === 0) return;
   try {
     const now = new Date();
-    const message = {
-      notification: {
-        title: "⏰ Ping mỗi phút",
-        body: "Bây giờ là " + now.toLocaleTimeString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })
-      }
+    const dataPayload = {
+      title: String(CURRENT_MESSAGE.title ?? "⏰ Ping 30s"),
+      body : String((CURRENT_MESSAGE.body ?? "Thông báo") + " | " + now.toLocaleTimeString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })),
+      url  : "/"
     };
     const results = [];
     for (const t of TOKENS) {
       try {
-        const id = await messaging.send({ ...message, token: t });
+        // data-only: MỌI GIÁ TRỊ PHẢI LÀ STRING
+        const id = await messaging.send({ token: t, data: dataPayload });
         results.push({ token: t.slice(0,16) + "...", id });
       } catch (e) {
         results.push({ token: t.slice(0,16) + "...", error: String(e) });
@@ -68,7 +73,7 @@ cron.schedule("* * * * *", async () => {
   } catch (e) { console.error("[cron error]", e); }
 });
 
-// API đơn giản
+// API
 app.post("/enable", async (req, res) => {
   const { token } = req.body || {};
   if (!token) return res.status(400).json({ error: "Missing token" });
@@ -85,7 +90,16 @@ app.post("/disable", async (req, res) => {
 });
 
 app.post("/status", (req, res) => {
-  res.json({ enabled: ENABLED, tokens: TOKENS.size, lastSentAt, nextRun: ENABLED ? "mỗi phút" : null });
+  res.json({ enabled: ENABLED, tokens: TOKENS.size, lastSentAt, nextRun: ENABLED ? "30s" : null, CURRENT_MESSAGE });
+});
+
+// Cập nhật nội dung thông báo từ client
+app.post("/setMessage", async (req, res) => {
+  const { title, body } = req.body || {};
+  if (!title || !body) return res.status(400).json({ error: "Missing title/body" });
+  CURRENT_MESSAGE = { title: String(title), body: String(body) };
+  await saveState();
+  res.json({ ok: true, CURRENT_MESSAGE });
 });
 
 const PORT = process.env.PORT || 3000;
